@@ -158,7 +158,8 @@ image: '/media/company-one.jpg',
 `TalansGroup.jsx` في جذر المستودع هو الموقع كاملاً في **ملف React واحد**، مُعدّ للصق المباشر
 داخل Claude Artifact (لا Vite ولا `src/` ولا خطوة بناء).
 
-- المكتبات المستخدمة: `react`، `motion/react`، `lucide-react`، و Tailwind (classes أساسية + arbitrary values).
+- المكتبات المستخدمة: `react`، `framer-motion`، `lucide-react`، و Tailwind (classes أساسية + arbitrary values).
+  إن كانت بيئتك تستخدم حزمة `motion` الجديدة، غيّر سطر الاستيراد إلى `from 'motion/react'` — بقية الكود نفسه.
 - لا `localStorage` ولا `sessionStorage` — الحالة عبر `useState` فقط.
 - كل المحتوى القابل للتعديل في ثوابت أعلى الملف: `LOGO_SRC`، `SITE`، `NAV_LINKS`، `ABOUT`،
   `STATS`، `SECTORS`، `INVESTMENT`، `SERVICES`، `PROJECTS`، `CONTACT`، `FORMS`.
@@ -171,3 +172,14 @@ image: '/media/company-one.jpg',
 > لأن فصل الأحرف العربية في عناصر مستقلة يكسر اتصال الحروف ويشوّه الخط.
 
 المجلد `src/` يحتفظ بنسخة Vite متعددة الملفات من مرحلة سابقة؛ نسخة الـ Artifact مستقلة عنها تماماً.
+
+### معاينة سريعة بلا تشغيل خادم
+
+```bash
+npm install
+npm run preview:artifact
+```
+
+يُنتج `talans-preview.html` — ملف واحد يُفتح بالنقر المزدوج في أي متصفح، وفيه React
+و framer-motion و lucide و CSS كلها مضمّنة (الاتصال بالإنترنت مطلوب فقط لتحميل خط ثمانية،
+وبدونه يعمل الموقع بخط بديل).

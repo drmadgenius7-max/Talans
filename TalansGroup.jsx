@@ -17,7 +17,7 @@ import {
   useTransform,
   useSpring,
   useReducedMotion,
-} from 'motion/react';
+} from 'framer-motion';
 import {
   ArrowLeft,
   Menu,
