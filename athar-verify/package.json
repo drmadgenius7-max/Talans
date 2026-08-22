@@ -1,0 +1,65 @@
+{
+  "name": "athar-verify",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Athar Verify — تحقق من أصالة التوثيق | Documentation authenticity verification for Athar Store",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx worker/index.ts",
+    "worker:prod": "node dist-worker/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "node --test --import tsx tests/*.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.716.0",
+    "@aws-sdk/s3-request-presigner": "^3.716.0",
+    "@prisma/client": "^6.19.3",
+    "@radix-ui/react-dialog": "^1.1.4",
+    "@radix-ui/react-label": "^2.1.1",
+    "@radix-ui/react-select": "^2.1.4",
+    "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-tabs": "^1.1.2",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.34.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.6.1",
+    "ioredis": "^5.4.2",
+    "jose": "^5.9.6",
+    "lucide-react": "^0.469.0",
+    "next": "^15.5.23",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.5",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^3.4.17",
+    "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
