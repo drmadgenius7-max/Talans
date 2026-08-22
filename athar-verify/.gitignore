@@ -13,3 +13,4 @@ coverage/
 storage-data/
 tmp/
 next-env.d.ts
+*.tsbuildinfo
