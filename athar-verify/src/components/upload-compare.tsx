@@ -167,10 +167,9 @@ export function UploadCompare({
     <Card className="animate-in-up">
       <CardContent className="flex flex-col gap-4 p-5 sm:p-6">
         <div>
-          <h3 className="text-base font-bold">هل لديك نسخة من الفيديو؟ تحقق منها</h3>
+          <h3 className="text-base font-bold">لديك نسخة من الفيديو؟ تأكد منها</h3>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            ارفع النسخة الموجودة لديك وسنقارن بصمتها الرقمية مع النسخة الأصلية المسجلة لدينا. لا
-            نحتفظ بالملف الذي ترفعه — يُحذف فور انتهاء الفحص.
+            ارفعها وسنخبرك إن كانت هي نفسها التوثيق المسجل لدينا. لا نحتفظ بملفك.
           </p>
         </div>
 
@@ -185,8 +184,8 @@ export function UploadCompare({
             }}
           >
             <FileUp className="size-7 text-primary" />
-            <span className="text-sm font-semibold">اختر ملف الفيديو أو اسحبه إلى هنا</span>
-            <span className="text-xs text-muted-foreground">MP4, MOV, WEBM — حتى 300 ميجابايت</span>
+            <span className="text-sm font-semibold">اختر الفيديو</span>
+            <span className="text-xs text-muted-foreground">حتى 300 ميجابايت</span>
             <input
               type="file"
               accept="video/*"
@@ -203,7 +202,7 @@ export function UploadCompare({
           <div className="flex flex-col gap-3 rounded-[calc(var(--radius)-0.2rem)] border border-border bg-secondary/30 p-5">
             <div className="flex items-center gap-2.5 text-sm font-medium">
               <Loader2 className="size-4 animate-spin text-primary" />
-              {phase === 'uploading' ? `جارٍ رفع الملف… ${progress}%` : 'جارٍ تحليل الملف ومقارنته…'}
+              {phase === 'uploading' ? `جارٍ الرفع… ${progress}%` : 'جارٍ الفحص…'}
             </div>
 
             {phase === 'uploading' && (
@@ -223,8 +222,7 @@ export function UploadCompare({
 
             {phase === 'processing' && (
               <p className="text-xs leading-relaxed text-muted-foreground">
-                نستخرج الإطارات والبصمة الصوتية ونقارنها بالتوثيق الأصلي. قد يستغرق هذا دقيقة أو
-                أكثر حسب طول الفيديو.
+                قد يستغرق هذا دقيقة حسب طول الفيديو.
               </p>
             )}
           </div>
@@ -241,7 +239,7 @@ export function UploadCompare({
         )}
 
         {(phase === 'done' || phase === 'error') && (
-          <Button type="button" variant="outline" onClick={reset} className="self-start">
+          <Button type="button" variant="outline" size="sm" onClick={reset} className="self-start">
             <RotateCcw />
             فحص ملف آخر
           </Button>

@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // This app lives in a subdirectory of a repo that has its own lockfile at the
+  // root; without this, Next infers the wrong workspace root and warns on boot.
+  outputFileTracingRoot: __dirname,
   output: 'standalone',
   poweredByHeader: false,
   serverExternalPackages: ['bullmq', 'ioredis', '@prisma/client', 'bcryptjs'],

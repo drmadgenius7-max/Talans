@@ -88,13 +88,13 @@ export function OrderLookup() {
             aria-describedby="order-number-help"
           />
           <p id="order-number-help" className="mt-2 text-xs text-muted-foreground">
-            تجده في رسالة تأكيد الطلب أو في صفحة طلباتك لدى متجر أثر.
+            تجده في رسالة تأكيد الطلب.
           </p>
         </div>
 
         <Button type="submit" size="lg" disabled={loading} className="w-full">
           {loading ? <Loader2 className="animate-spin" /> : <Search />}
-          {loading ? 'جارٍ البحث…' : 'تحقق من الطلب'}
+          {loading ? 'جارٍ البحث…' : 'تحقق'}
         </Button>
 
         {error && (
