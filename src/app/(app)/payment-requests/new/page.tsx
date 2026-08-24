@@ -6,8 +6,13 @@ import { NewPaymentRequestForm } from "./new-request-form";
 
 export const metadata: Metadata = { title: "مطالبة شخص" };
 
-export default async function NewPaymentRequestPage() {
+export default async function NewPaymentRequestPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ payerUserId?: string }>;
+}) {
   const user = await requireUser();
+  const { payerUserId } = await searchParams;
   const knownUsers = await listKnownUsers(user.id);
 
   return (
@@ -18,7 +23,7 @@ export default async function NewPaymentRequestPage() {
           <CardDescription>أرسل طلب دفع مباشر لأي شخص، حتى لو ما عنده حساب</CardDescription>
         </CardHeader>
         <CardContent>
-          <NewPaymentRequestForm knownUsers={knownUsers} defaultCurrency={user.defaultCurrency} />
+          <NewPaymentRequestForm knownUsers={knownUsers} defaultCurrency={user.defaultCurrency} defaultPayerUserId={payerUserId} />
         </CardContent>
       </Card>
     </div>

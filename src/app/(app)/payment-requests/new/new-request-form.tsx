@@ -16,9 +16,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 export function NewPaymentRequestForm({
   knownUsers,
   defaultCurrency,
+  defaultPayerUserId,
 }: {
   knownUsers: { id: string; name: string; avatarUrl: string | null }[];
   defaultCurrency: string;
+  defaultPayerUserId?: string;
 }) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export function NewPaymentRequestForm({
     formState: { errors, isSubmitting },
   } = useForm<CreatePaymentRequestInput>({
     resolver: zodResolver(createPaymentRequestSchema),
-    defaultValues: { currency: defaultCurrency },
+    defaultValues: { currency: defaultCurrency, payerUserId: defaultPayerUserId },
   });
 
   async function onSubmit(data: CreatePaymentRequestInput) {
@@ -59,7 +61,7 @@ export function NewPaymentRequestForm({
       {personMode === "known" ? (
         <div className="space-y-1.5">
           <Label>الشخص</Label>
-          <Select onValueChange={(v) => setValue("payerUserId", v)}>
+          <Select defaultValue={defaultPayerUserId} onValueChange={(v) => setValue("payerUserId", v)}>
             <SelectTrigger>
               <SelectValue placeholder="اختر شخص" />
             </SelectTrigger>
