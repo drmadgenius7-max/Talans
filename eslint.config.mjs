@@ -8,12 +8,12 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     rules: {
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "@typescript-eslint/no-explicit-any": "warn",
     },
   },
   {
-    ignores: ["node_modules/**", ".next/**", "storage/**", "public/**"],
+    ignores: ["node_modules/**", ".next/**", "storage/**", "public/**", "next-env.d.ts", "playwright-report/**", "test-results/**"],
   },
 ];
 

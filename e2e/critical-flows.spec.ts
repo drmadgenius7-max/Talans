@@ -22,7 +22,7 @@ test("Scenario A — دفعت عنهم: split, auto-requests, public pay, balanc
   // Create the group with 3 guest members.
   await page.goto("/groups/new");
   await page.getByLabel("اسم المجموعة").fill(`مجموعة اختبار A ${suffix}`);
-  for (const name of ["محمد", "خالد", "عبدالله"]) {
+  for (const _name of ["محمد", "خالد", "عبدالله"]) {
     await page.getByRole("button", { name: "إضافة عضو" }).click();
   }
   const nameInputs = page.locator('input[placeholder="الاسم"]');
@@ -108,7 +108,7 @@ test("Scenario C — Group Ledger: multi-payer expenses, debt simplification, se
 
   await page.goto("/groups/new");
   await page.getByLabel("اسم المجموعة").fill(`رحلة البحرين ${suffix}`);
-  for (const name of ["محمد", "خالد", "أحمد"]) {
+  for (const _name of ["محمد", "خالد", "أحمد"]) {
     await page.getByRole("button", { name: "إضافة عضو" }).click();
   }
   const nameInputs = page.locator('input[placeholder="الاسم"]');
