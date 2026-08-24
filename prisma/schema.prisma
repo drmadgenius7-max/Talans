@@ -1,0 +1,978 @@
+// ============================================================================
+// قِطّة | Qitta — Database Schema
+//
+// Money is always stored as an integer in the currency's minor unit
+// (halalas for SAR, fils for BHD/KWD, cents for USD, etc.) — see
+// src/lib/money.ts. Never store money as Float/Decimal-with-rounding-drift.
+//
+// The ledger (LedgerEntry) is the source of truth for balances. It is
+// append-only: corrections are made with offsetting ADJUSTMENT entries,
+// never by mutating or deleting historical rows.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Auth & Users
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id              String     @id @default(cuid())
+  name            String
+  email           String?    @unique
+  emailVerifiedAt DateTime?
+  phone           String?    @unique
+  phoneVerifiedAt DateTime?
+  passwordHash    String
+  avatarUrl       String?
+  defaultCurrency String     @default("SAR")
+  country         String     @default("SA")
+  locale          String     @default("ar")
+  timezone        String     @default("Asia/Riyadh")
+  role            UserRole   @default(USER)
+  status          UserStatus @default(ACTIVE)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
+  verificationTokens    VerificationToken[]
+  preference            UserPreference?
+  createdGroups         Group[]                    @relation("GroupCreatedBy")
+  groupMemberships      GroupMember[]
+  createdInvites        GroupInvite[]              @relation("InviteCreatedBy")
+  usedInvites           GroupInvite[]              @relation("InviteUsedBy")
+  createdExpenses       Expense[]                  @relation("ExpenseCreatedBy")
+  createdCategories     Category[]                 @relation("CategoryCreatedBy")
+  requestedPayments     PaymentRequest[]           @relation("PaymentRequesterUser")
+  owedPayments          PaymentRequest[]           @relation("PaymentPayerUser")
+  transactions          Transaction[]              @relation("TransactionContributor")
+  createdSharedPayments SharedPayment[]            @relation("SharedPaymentCreatedBy")
+  sharedPaymentEntries  SharedPaymentParticipant[]
+  recordedSettlements   Settlement[]               @relation("SettlementRecordedBy")
+  notifications         Notification[]
+  createdReminders      Reminder[]                 @relation("ReminderCreatedBy")
+  activityLogs          ActivityLog[]              @relation("ActivityActor")
+  auditLogs             AuditLog[]                 @relation("AuditActor")
+  files                 FileAsset[]
+  createdRecurring      RecurringExpense[]         @relation("RecurringCreatedBy")
+  friendshipsAsA        Friendship[]               @relation("FriendA")
+  friendshipsAsB        Friendship[]               @relation("FriendB")
+  claimedGroupMembers   GroupMember[]              @relation("ClaimedBy")
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum VerificationChannel {
+  EMAIL
+  PHONE
+}
+
+enum VerificationPurpose {
+  SIGNUP
+  LOGIN_OTP
+  CHANGE_CONTACT
+}
+
+model VerificationToken {
+  id         String              @id @default(cuid())
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel    VerificationChannel
+  purpose    VerificationPurpose @default(SIGNUP)
+  target     String
+  codeHash   String
+  attempts   Int                 @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId])
+  @@index([target])
+}
+
+model UserPreference {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notifyInApp         Boolean  @default(true)
+  notifyEmail         Boolean  @default(true)
+  notifySms           Boolean  @default(false)
+  notifyWhatsapp      Boolean  @default(false)
+  notifyPush          Boolean  @default(false)
+  reminderAutoEnabled Boolean  @default(true)
+  theme               String   @default("system")
+  updatedAt           DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Friends (derived ledger relationship between two users)
+// ----------------------------------------------------------------------------
+
+model Friendship {
+  id        String   @id @default(cuid())
+  userAId   String
+  userA     User     @relation("FriendA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId   String
+  userB     User     @relation("FriendB", fields: [userBId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userAId, userBId])
+  @@index([userBId])
+}
+
+// ----------------------------------------------------------------------------
+// Groups
+// ----------------------------------------------------------------------------
+
+enum GroupType {
+  TRIP
+  HOME
+  FRIENDS
+  RESTAURANT
+  EVENT
+  FAMILY
+  HOUSING
+  PROJECT
+  OTHER
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum GroupMemberStatus {
+  ACTIVE
+  LEFT
+  REMOVED
+}
+
+model Group {
+  id           String    @id @default(cuid())
+  name         String
+  description  String?
+  imageUrl     String?
+  type         GroupType @default(OTHER)
+  currency     String    @default("SAR")
+  startDate    DateTime?
+  endDate      DateTime?
+  isQuickGroup Boolean   @default(false)
+  isArchived   Boolean   @default(false)
+  createdById  String
+  createdBy    User      @relation("GroupCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  members           GroupMember[]
+  invites           GroupInvite[]
+  expenses          Expense[]
+  categories        Category[]
+  paymentRequests   PaymentRequest[]
+  sharedPayments    SharedPayment[]
+  settlements       Settlement[]
+  ledgerEntries     LedgerEntry[]
+  activityLogs      ActivityLog[]
+  recurringExpenses RecurringExpense[]
+  files             FileAsset[]
+
+  @@index([createdById])
+}
+
+model GroupMember {
+  id              String            @id @default(cuid())
+  groupId         String
+  group           Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?             @relation(fields: [userId], references: [id])
+  guestName       String?
+  guestPhone      String?
+  guestEmail      String?
+  role            GroupRole         @default(MEMBER)
+  status          GroupMemberStatus @default(ACTIVE)
+  invitedById     String?
+  joinedAt        DateTime          @default(now())
+  leftAt          DateTime?
+  claimedByUserId String?
+  claimedBy       User?             @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
+  claimedAt       DateTime?
+
+  expensePayers        ExpensePayer[]
+  expenseParticipants  ExpenseParticipant[]
+  ledgerEntries        LedgerEntry[]
+  settlementsFrom      Settlement[]               @relation("SettlementFrom")
+  settlementsTo        Settlement[]               @relation("SettlementTo")
+  sharedPaymentEntries SharedPaymentParticipant[]
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+enum InviteType {
+  LINK
+  QR
+  EMAIL
+  PHONE
+}
+
+model GroupInvite {
+  id           String     @id @default(cuid())
+  groupId      String
+  group        Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  token        String     @unique
+  type         InviteType @default(LINK)
+  email        String?
+  phone        String?
+  roleOnJoin   GroupRole  @default(MEMBER)
+  createdById  String
+  createdBy    User       @relation("InviteCreatedBy", fields: [createdById], references: [id])
+  maxUses      Int?
+  useCount     Int        @default(0)
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  usedByUserId String?
+  usedByUser   User?      @relation("InviteUsedBy", fields: [usedByUserId], references: [id])
+  usedAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// Categories
+// ----------------------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  nameAr      String
+  nameEn      String
+  icon        String
+  isCustom    Boolean  @default(false)
+  createdById String?
+  createdBy   User?    @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+  groupId     String?
+  group       Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  expenses Expense[]
+
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// Expenses & Splits
+// ----------------------------------------------------------------------------
+
+enum SplitType {
+  EQUAL
+  EXACT
+  PERCENTAGE
+  SHARES
+  ITEMIZED
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  VOIDED
+  ARCHIVED
+}
+
+model Expense {
+  id                 String            @id @default(cuid())
+  groupId            String
+  group              Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title              String
+  amount             Int
+  currency           String            @default("SAR")
+  categoryId         String?
+  category           Category?         @relation(fields: [categoryId], references: [id])
+  date               DateTime          @default(now())
+  notes              String?
+  splitType          SplitType         @default(EQUAL)
+  status             ExpenseStatus     @default(ACTIVE)
+  recurringExpenseId String?
+  recurringExpense   RecurringExpense? @relation(fields: [recurringExpenseId], references: [id])
+  createdById        String
+  createdBy          User              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  voidedAt           DateTime?
+
+  payers          ExpensePayer[]
+  participants    ExpenseParticipant[]
+  items           ExpenseItem[]
+  adjustments     ExpenseAdjustment[]
+  attachments     ExpenseAttachment[]
+  ledgerEntries   LedgerEntry[]
+  paymentRequests PaymentRequest[]
+
+  @@index([groupId])
+  @@index([categoryId])
+}
+
+model ExpensePayer {
+  id            String      @id @default(cuid())
+  expenseId     String
+  expense       Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  groupMemberId String
+  groupMember   GroupMember @relation(fields: [groupMemberId], references: [id])
+  amount        Int
+
+  @@index([expenseId])
+  @@index([groupMemberId])
+}
+
+model ExpenseParticipant {
+  id            String      @id @default(cuid())
+  expenseId     String
+  expense       Expense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  groupMemberId String
+  groupMember   GroupMember @relation(fields: [groupMemberId], references: [id])
+  shareValue    Int?
+  owedAmount    Int
+
+  itemAssignments ExpenseItemAssignment[]
+
+  @@index([expenseId])
+  @@index([groupMemberId])
+}
+
+model ExpenseItem {
+  id        String  @id @default(cuid())
+  expenseId String
+  expense   Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  name      String
+  amount    Int
+  quantity  Int     @default(1)
+
+  assignments ExpenseItemAssignment[]
+
+  @@index([expenseId])
+}
+
+model ExpenseItemAssignment {
+  id            String             @id @default(cuid())
+  expenseItemId String
+  expenseItem   ExpenseItem        @relation(fields: [expenseItemId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   ExpenseParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([expenseItemId])
+  @@index([participantId])
+}
+
+enum AdjustmentType {
+  TAX
+  VAT
+  DISCOUNT
+  DELIVERY
+  SERVICE_CHARGE
+  TIP
+  OTHER
+}
+
+model ExpenseAdjustment {
+  id           String         @id @default(cuid())
+  expenseId    String
+  expense      Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  type         AdjustmentType
+  amount       Int
+  isPercentage Boolean        @default(false)
+  isDiscount   Boolean        @default(false)
+
+  @@index([expenseId])
+}
+
+model ExpenseAttachment {
+  id        String    @id @default(cuid())
+  expenseId String
+  expense   Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileId    String
+  file      FileAsset @relation(fields: [fileId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@index([expenseId])
+}
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model RecurringExpense {
+  id             String             @id @default(cuid())
+  groupId        String
+  group          Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  templateTitle  String
+  templateAmount Int
+  currency       String             @default("SAR")
+  categoryId     String?
+  splitType      SplitType          @default(EQUAL)
+  splitConfig    Json?
+  frequency      RecurringFrequency
+  nextRunAt      DateTime
+  lastRunAt      DateTime?
+  isActive       Boolean            @default(true)
+  createdById    String
+  createdBy      User               @relation("RecurringCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime           @default(now())
+
+  generatedExpenses Expense[]
+
+  @@index([groupId])
+  @@index([nextRunAt])
+}
+
+// ----------------------------------------------------------------------------
+// Payment Requests ("مطالبات")
+// ----------------------------------------------------------------------------
+
+enum PaymentRequestStatus {
+  DRAFT
+  PENDING
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+  FAILED
+}
+
+model PaymentRequest {
+  id              String               @id @default(cuid())
+  groupId         String?
+  group           Group?               @relation(fields: [groupId], references: [id])
+  expenseId       String?
+  expense         Expense?             @relation(fields: [expenseId], references: [id])
+  requesterId     String
+  requester       User                 @relation("PaymentRequesterUser", fields: [requesterId], references: [id])
+  payerUserId     String?
+  payerUser       User?                @relation("PaymentPayerUser", fields: [payerUserId], references: [id])
+  payerGuestName  String?
+  payerGuestPhone String?
+  amount          Int
+  paidAmount      Int                  @default(0)
+  currency        String               @default("SAR")
+  reason          String
+  note            String?
+  dueDate         DateTime?
+  status          PaymentRequestStatus @default(PENDING)
+  secureToken     String               @unique
+  tokenExpiresAt  DateTime?
+  revokedAt       DateTime?
+  viewedAt        DateTime?
+  lastReminderAt  DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  attachments   FileAsset[]
+  transactions  Transaction[]
+  reminders     Reminder[]
+  ledgerEntries LedgerEntry[]
+  settlement    Settlement?
+
+  @@index([requesterId])
+  @@index([payerUserId])
+  @@index([groupId])
+  @@index([secureToken])
+}
+
+// ----------------------------------------------------------------------------
+// Payments / Transactions (Mock Payment Provider abstraction lives on top)
+// ----------------------------------------------------------------------------
+
+enum TransactionType {
+  CHARGE
+  REFUND
+  PAYOUT
+}
+
+enum TransactionPurpose {
+  PAYMENT_REQUEST
+  SHARED_PAYMENT_CONTRIBUTION
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Transaction {
+  id                   String             @id @default(cuid())
+  type                 TransactionType    @default(CHARGE)
+  purpose              TransactionPurpose
+  paymentRequestId     String?
+  paymentRequest       PaymentRequest?    @relation(fields: [paymentRequestId], references: [id])
+  sharedPaymentId      String?
+  sharedPayment        SharedPayment?     @relation(fields: [sharedPaymentId], references: [id])
+  contributorUserId    String?
+  contributorUser      User?              @relation("TransactionContributor", fields: [contributorUserId], references: [id])
+  contributorGuestName String?
+  isAnonymous          Boolean            @default(false)
+  amount               Int
+  currency             String             @default("SAR")
+  status               TransactionStatus  @default(PENDING)
+  provider             String             @default("mock")
+  providerRef          String?
+  idempotencyKey       String             @unique
+  failureReason        String?
+  metadata             Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  events        TransactionEvent[]
+  refunds       Refund[]
+  contribution  Contribution?
+  ledgerEntries LedgerEntry[]
+
+  @@index([paymentRequestId])
+  @@index([sharedPaymentId])
+  @@index([status])
+}
+
+model TransactionEvent {
+  id              String      @id @default(cuid())
+  transactionId   String
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  provider        String
+  providerEventId String
+  type            String
+  payload         Json?
+  processedAt     DateTime    @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([transactionId])
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model Refund {
+  id            String       @id @default(cuid())
+  transactionId String
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
+  amount        Int
+  reason        String?
+  status        RefundStatus @default(PENDING)
+  providerRef   String?
+  createdAt     DateTime     @default(now())
+  processedAt   DateTime?
+
+  @@index([transactionId])
+}
+
+// ----------------------------------------------------------------------------
+// Shared Payments ("الدفع التشاركي" — pre-purchase group funding)
+// ----------------------------------------------------------------------------
+
+enum SharedPaymentSplitMethod {
+  EQUAL
+  CUSTOM
+  PERCENTAGE
+  OPEN
+}
+
+enum SharedPaymentStatus {
+  DRAFT
+  ACTIVE
+  PARTIALLY_FUNDED
+  FUNDED
+  PROCESSING
+  COMPLETED
+  EXPIRED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+  FAILED
+}
+
+model SharedPayment {
+  id                 String                   @id @default(cuid())
+  groupId            String?
+  group              Group?                   @relation(fields: [groupId], references: [id])
+  title              String
+  description        String?
+  imageUrl           String?
+  targetAmount       Int
+  collectedAmount    Int                      @default(0)
+  currency           String                   @default("SAR")
+  createdById        String
+  createdBy          User                     @relation("SharedPaymentCreatedBy", fields: [createdById], references: [id])
+  beneficiaryName    String?
+  beneficiaryContact String?
+  externalOrderRef   String?
+  splitMethod        SharedPaymentSplitMethod @default(EQUAL)
+  deadline           DateTime?
+  status             SharedPaymentStatus      @default(ACTIVE)
+  privacyShowNames   Boolean                  @default(true)
+  privacyShowAmounts Boolean                  @default(true)
+  privacyShowTotal   Boolean                  @default(true)
+  allowOverfunding   Boolean                  @default(false)
+  secureToken        String                   @unique
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+
+  participants  SharedPaymentParticipant[]
+  contributions Contribution[]
+  transactions  Transaction[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([createdById])
+  @@index([secureToken])
+  @@index([status])
+}
+
+enum SharedPaymentParticipantStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+model SharedPaymentParticipant {
+  id              String                         @id @default(cuid())
+  sharedPaymentId String
+  sharedPayment   SharedPayment                  @relation(fields: [sharedPaymentId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?                          @relation(fields: [userId], references: [id])
+  groupMemberId   String?
+  groupMember     GroupMember?                   @relation(fields: [groupMemberId], references: [id])
+  guestName       String?
+  guestContact    String?
+  targetShare     Int?
+  paidAmount      Int                            @default(0)
+  status          SharedPaymentParticipantStatus @default(PENDING)
+
+  @@index([sharedPaymentId])
+}
+
+model Contribution {
+  id              String        @id @default(cuid())
+  sharedPaymentId String
+  sharedPayment   SharedPayment @relation(fields: [sharedPaymentId], references: [id], onDelete: Cascade)
+  transactionId   String        @unique
+  transaction     Transaction   @relation(fields: [transactionId], references: [id])
+  amount          Int
+  isAnonymous     Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  @@index([sharedPaymentId])
+}
+
+// ----------------------------------------------------------------------------
+// Settlements
+// ----------------------------------------------------------------------------
+
+enum SettlementMethod {
+  ONLINE
+  CASH
+  BANK_TRANSFER
+  OTHER
+}
+
+enum SettlementStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+model Settlement {
+  id               String           @id @default(cuid())
+  groupId          String
+  group            Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromMemberId     String
+  fromMember       GroupMember      @relation("SettlementFrom", fields: [fromMemberId], references: [id])
+  toMemberId       String
+  toMember         GroupMember      @relation("SettlementTo", fields: [toMemberId], references: [id])
+  amount           Int
+  currency         String           @default("SAR")
+  method           SettlementMethod @default(ONLINE)
+  status           SettlementStatus @default(PENDING)
+  paymentRequestId String?          @unique
+  paymentRequest   PaymentRequest?  @relation(fields: [paymentRequestId], references: [id])
+  note             String?
+  recordedById     String
+  recordedBy       User             @relation("SettlementRecordedBy", fields: [recordedById], references: [id])
+  settledAt        DateTime?
+  createdAt        DateTime         @default(now())
+
+  ledgerEntries LedgerEntry[]
+
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// Ledger — append-only source of truth for balances
+// ----------------------------------------------------------------------------
+
+enum LedgerEntryType {
+  EXPENSE
+  OBLIGATION
+  PAYMENT
+  CONTRIBUTION
+  REFUND
+  SETTLEMENT
+  ADJUSTMENT
+}
+
+model LedgerEntry {
+  id            String          @id @default(cuid())
+  groupId       String?
+  group         Group?          @relation(fields: [groupId], references: [id])
+  groupMemberId String
+  groupMember   GroupMember     @relation(fields: [groupMemberId], references: [id])
+  type          LedgerEntryType
+  amount        Int
+  currency      String          @default("SAR")
+  description   String
+
+  expenseId        String?
+  expense          Expense?        @relation(fields: [expenseId], references: [id])
+  paymentRequestId String?
+  paymentRequest   PaymentRequest? @relation(fields: [paymentRequestId], references: [id])
+  transactionId    String?
+  transaction      Transaction?    @relation(fields: [transactionId], references: [id])
+  sharedPaymentId  String?
+  sharedPayment    SharedPayment?  @relation(fields: [sharedPaymentId], references: [id])
+  settlementId     String?
+  settlement       Settlement?     @relation(fields: [settlementId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+  @@index([groupMemberId])
+  @@index([type])
+}
+
+// ----------------------------------------------------------------------------
+// Notifications & Reminders
+// ----------------------------------------------------------------------------
+
+enum NotificationType {
+  PAYMENT_RECEIVED
+  PAYMENT_REQUEST_CREATED
+  PAYMENT_REQUEST_DUE
+  PAYMENT_REQUEST_OVERDUE
+  EXPENSE_ADDED
+  EXPENSE_UPDATED
+  GROUP_INVITE
+  GROUP_MEMBER_JOINED
+  SHARED_PAYMENT_PROGRESS
+  SHARED_PAYMENT_COMPLETED
+  SHARED_PAYMENT_EXPIRED
+  SETTLEMENT_RECORDED
+  REFUND_ISSUED
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([userId, isRead])
+}
+
+enum ReminderChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+enum ReminderStatus {
+  SCHEDULED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model Reminder {
+  id               String          @id @default(cuid())
+  paymentRequestId String
+  paymentRequest   PaymentRequest  @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+  channel          ReminderChannel @default(IN_APP)
+  scheduledFor     DateTime
+  sentAt           DateTime?
+  status           ReminderStatus  @default(SCHEDULED)
+  isAutomatic      Boolean         @default(false)
+  createdById      String?
+  createdBy        User?           @relation("ReminderCreatedBy", fields: [createdById], references: [id])
+  createdAt        DateTime        @default(now())
+
+  @@index([paymentRequestId])
+  @@index([status, scheduledFor])
+}
+
+// ----------------------------------------------------------------------------
+// Activity & Audit
+// ----------------------------------------------------------------------------
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  groupId     String?
+  group       Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actor       User?    @relation("ActivityActor", fields: [actorUserId], references: [id])
+  type        String
+  message     String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([groupId])
+  @@index([createdAt])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  VOID
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  entityType  String
+  entityId    String
+  action      AuditAction
+  actorUserId String?
+  actor       User?       @relation("AuditActor", fields: [actorUserId], references: [id])
+  oldValue    Json?
+  newValue    Json?
+  createdAt   DateTime    @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// ----------------------------------------------------------------------------
+// Files
+// ----------------------------------------------------------------------------
+
+enum FileKind {
+  RECEIPT
+  AVATAR
+  GROUP_IMAGE
+  SHARED_PAYMENT_IMAGE
+  OTHER
+}
+
+model FileAsset {
+  id              String   @id @default(cuid())
+  ownerUserId     String
+  owner           User     @relation(fields: [ownerUserId], references: [id])
+  groupId         String?
+  group           Group?   @relation(fields: [groupId], references: [id])
+  kind            FileKind @default(OTHER)
+  originalName    String
+  mimeType        String
+  sizeBytes       Int
+  storageProvider String   @default("local")
+  storageKey      String
+  url             String
+  createdAt       DateTime @default(now())
+
+  expenseAttachments ExpenseAttachment[]
+  paymentRequestId   String?
+  paymentRequest     PaymentRequest?     @relation(fields: [paymentRequestId], references: [id])
+
+  @@index([ownerUserId])
+  @@index([groupId])
+}
+
+// ----------------------------------------------------------------------------
+// Provider Connections (placeholder for future real integrations)
+// ----------------------------------------------------------------------------
+
+enum ProviderKind {
+  PAYMENT
+  SMS
+  WHATSAPP
+  EMAIL
+  OCR
+  STORAGE
+}
+
+model ProviderConnection {
+  id        String       @id @default(cuid())
+  kind      ProviderKind
+  name      String
+  isActive  Boolean      @default(false)
+  isMock    Boolean      @default(true)
+  config    Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([kind, name])
+}
