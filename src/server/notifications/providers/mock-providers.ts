@@ -11,7 +11,6 @@ class MockChannelProvider implements MessageProvider {
   constructor(public readonly name: string) {}
 
   async send(input: SendMessageInput): Promise<{ success: boolean; providerRef?: string }> {
-    // eslint-disable-next-line no-console
     console.log(`[mock:${this.name}] -> ${input.to}: ${input.subject ? `${input.subject} — ` : ""}${input.body}`);
     return { success: true, providerRef: `mock_${this.name}_${Date.now()}` };
   }

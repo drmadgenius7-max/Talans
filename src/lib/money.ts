@@ -112,8 +112,8 @@ export function allocateByWeights(total: MinorAmount, weights: number[]): MinorA
 
   const rawShares = weights.map((w) => (total * w) / totalWeight);
   const floored = rawShares.map((r) => Math.floor(r));
-  let distributed = floored.reduce((s, f) => s + f, 0);
-  let remainder = total - distributed;
+  const distributed = floored.reduce((s, f) => s + f, 0);
+  const remainder = total - distributed;
 
   const remainders = rawShares
     .map((r, i) => ({ i, frac: r - floored[i]! }))

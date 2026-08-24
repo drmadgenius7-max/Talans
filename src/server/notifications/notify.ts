@@ -1,6 +1,5 @@
 import "server-only";
 import type { Prisma, PrismaClient, NotificationType } from "@prisma/client";
-import { db } from "@/lib/db";
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 

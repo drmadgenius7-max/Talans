@@ -53,14 +53,14 @@ export class MockPaymentProvider implements PaymentProvider {
     };
   }
 
-  async refundPayment(input: RefundInput): Promise<RefundResult> {
+  async refundPayment(_input: RefundInput): Promise<RefundResult> {
     return {
       providerRefundRef: `mock_refund_${generateSecureToken(8)}`,
       status: "SUCCEEDED",
     };
   }
 
-  async createPayout(input: PayoutInput): Promise<PayoutResult> {
+  async createPayout(_input: PayoutInput): Promise<PayoutResult> {
     return {
       providerPayoutRef: `mock_payout_${generateSecureToken(8)}`,
       status: "SUCCEEDED",
