@@ -221,11 +221,19 @@ async function applyPaymentRequestSuccess(tx: DbTx, paymentRequestId: string, tr
   });
 
   if (request.groupId) {
+    // Prefer the direct FKs set at request-creation time — they correctly
+    // identify guest (no-account) members, which payerUserId can't since
+    // it's null for guests. Fall back to a userId lookup only for legacy
+    // rows created before these columns existed.
     const [payerMember, requesterMember] = await Promise.all([
-      request.payerUserId
-        ? tx.groupMember.findFirst({ where: { groupId: request.groupId, userId: request.payerUserId } })
-        : null,
-      tx.groupMember.findFirst({ where: { groupId: request.groupId, userId: request.requesterId } }),
+      request.payerMemberId
+        ? tx.groupMember.findUnique({ where: { id: request.payerMemberId } })
+        : request.payerUserId
+          ? tx.groupMember.findFirst({ where: { groupId: request.groupId, userId: request.payerUserId } })
+          : null,
+      request.requesterMemberId
+        ? tx.groupMember.findUnique({ where: { id: request.requesterMemberId } })
+        : tx.groupMember.findFirst({ where: { groupId: request.groupId, userId: request.requesterId } }),
     ]);
     if (payerMember && requesterMember) {
       await recordPaymentRequestLedger(tx, {

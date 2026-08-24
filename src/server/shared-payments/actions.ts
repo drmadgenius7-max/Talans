@@ -11,6 +11,7 @@ import { createSharedPaymentSchema, contributeSchema } from "@/lib/validation/sh
 import { getPaymentProvider } from "@/server/payments/provider";
 import { assertSharedPaymentTransition } from "./state-machine";
 import { initiateSharedPaymentContribution } from "@/server/payments/service";
+import { checkRateLimit, getRequestIp } from "@/server/security/rate-limit";
 import type { ActionResult } from "@/server/auth/actions";
 
 export async function createSharedPaymentAction(input: unknown): Promise<ActionResult & { token?: string }> {
@@ -188,6 +189,11 @@ export async function ensureNotExpired(sharedPaymentId: string): Promise<void> {
 }
 
 export async function contributeAction(input: unknown): Promise<ActionResult & { redirectUrl?: string }> {
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`contribute:${ip}`, 20, 300).allowed) {
+    return { success: false, error: "محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل" };
+  }
+
   const parsed = contributeSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   const data = parsed.data;

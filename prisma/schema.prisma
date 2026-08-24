@@ -245,12 +245,14 @@ model GroupMember {
   claimedBy       User?             @relation("ClaimedBy", fields: [claimedByUserId], references: [id])
   claimedAt       DateTime?
 
-  expensePayers        ExpensePayer[]
-  expenseParticipants  ExpenseParticipant[]
-  ledgerEntries        LedgerEntry[]
-  settlementsFrom      Settlement[]               @relation("SettlementFrom")
-  settlementsTo        Settlement[]               @relation("SettlementTo")
-  sharedPaymentEntries SharedPaymentParticipant[]
+  expensePayers              ExpensePayer[]
+  expenseParticipants        ExpenseParticipant[]
+  ledgerEntries              LedgerEntry[]
+  settlementsFrom            Settlement[]               @relation("SettlementFrom")
+  settlementsTo              Settlement[]               @relation("SettlementTo")
+  sharedPaymentEntries       SharedPaymentParticipant[]
+  paymentRequestsAsPayer     PaymentRequest[]           @relation("PaymentPayerMember")
+  paymentRequestsAsRequester PaymentRequest[]           @relation("PaymentRequesterMember")
 
   @@unique([groupId, userId])
   @@index([groupId])
@@ -491,31 +493,35 @@ enum PaymentRequestStatus {
 }
 
 model PaymentRequest {
-  id              String               @id @default(cuid())
-  groupId         String?
-  group           Group?               @relation(fields: [groupId], references: [id])
-  expenseId       String?
-  expense         Expense?             @relation(fields: [expenseId], references: [id])
-  requesterId     String
-  requester       User                 @relation("PaymentRequesterUser", fields: [requesterId], references: [id])
-  payerUserId     String?
-  payerUser       User?                @relation("PaymentPayerUser", fields: [payerUserId], references: [id])
-  payerGuestName  String?
-  payerGuestPhone String?
-  amount          Int
-  paidAmount      Int                  @default(0)
-  currency        String               @default("SAR")
-  reason          String
-  note            String?
-  dueDate         DateTime?
-  status          PaymentRequestStatus @default(PENDING)
-  secureToken     String               @unique
-  tokenExpiresAt  DateTime?
-  revokedAt       DateTime?
-  viewedAt        DateTime?
-  lastReminderAt  DateTime?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  id                String               @id @default(cuid())
+  groupId           String?
+  group             Group?               @relation(fields: [groupId], references: [id])
+  expenseId         String?
+  expense           Expense?             @relation(fields: [expenseId], references: [id])
+  requesterId       String
+  requester         User                 @relation("PaymentRequesterUser", fields: [requesterId], references: [id])
+  requesterMemberId String?
+  requesterMember   GroupMember?         @relation("PaymentRequesterMember", fields: [requesterMemberId], references: [id])
+  payerUserId       String?
+  payerUser         User?                @relation("PaymentPayerUser", fields: [payerUserId], references: [id])
+  payerMemberId     String?
+  payerMember       GroupMember?         @relation("PaymentPayerMember", fields: [payerMemberId], references: [id])
+  payerGuestName    String?
+  payerGuestPhone   String?
+  amount            Int
+  paidAmount        Int                  @default(0)
+  currency          String               @default("SAR")
+  reason            String
+  note              String?
+  dueDate           DateTime?
+  status            PaymentRequestStatus @default(PENDING)
+  secureToken       String               @unique
+  tokenExpiresAt    DateTime?
+  revokedAt         DateTime?
+  viewedAt          DateTime?
+  lastReminderAt    DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   attachments   FileAsset[]
   transactions  Transaction[]

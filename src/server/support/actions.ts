@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { mockEmailProvider } from "@/server/notifications/providers/mock-providers";
+import { checkRateLimit, getRequestIp } from "@/server/security/rate-limit";
 import type { ActionResult } from "@/server/auth/actions";
 
 const contactSchema = z.object({
@@ -11,6 +12,11 @@ const contactSchema = z.object({
 });
 
 export async function submitContactFormAction(input: unknown): Promise<ActionResult> {
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`contact:${ip}`, 5, 3600).allowed) {
+    return { success: false, error: "محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل" };
+  }
+
   const parsed = contactSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
 

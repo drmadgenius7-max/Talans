@@ -16,6 +16,7 @@ import { hashPassword, verifyPassword, isPasswordStrongEnough } from "./password
 import { createSession, destroyCurrentSession, getCurrentUser, requireUser, revokeSessionById } from "./session";
 import { mockEmailProvider, mockSmsProvider } from "@/server/notifications/providers/mock-providers";
 import { env } from "@/lib/env";
+import { checkRateLimit, getRequestIp } from "@/server/security/rate-limit";
 
 export interface ActionResult {
   success: boolean;
@@ -23,12 +24,18 @@ export interface ActionResult {
 }
 
 const RESET_TOKEN_TTL_MS = 1000 * 60 * 30; // 30 minutes
+const RATE_LIMIT_MESSAGE = "محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل";
 
 // ---------------------------------------------------------------------------
 // Sign up
 // ---------------------------------------------------------------------------
 
 export async function signUpAction(input: unknown): Promise<ActionResult> {
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`signup:${ip}`, 10, 3600).allowed) {
+    return { success: false, error: RATE_LIMIT_MESSAGE };
+  }
+
   const parsed = signupSchema.safeParse(input);
   if (!parsed.success) {
     return { success: false, error: parsed.data ? "بيانات غير صحيحة" : parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
@@ -59,7 +66,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   });
 
   await createSession(user.id);
-  redirect("/dashboard");
+  redirect("/onboarding");
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +79,11 @@ export async function logInAction(input: unknown, redirectTo?: string): Promise<
     return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   }
   const { identifier, password } = parsed.data;
+
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`login-ip:${ip}`, 20, 600).allowed || !checkRateLimit(`login-id:${identifier.toLowerCase()}`, 8, 600).allowed) {
+    return { success: false, error: RATE_LIMIT_MESSAGE };
+  }
 
   const user = isEmailLike(identifier)
     ? await db.user.findUnique({ where: { email: identifier.trim().toLowerCase() } })
@@ -105,6 +117,11 @@ export async function requestPasswordResetAction(input: unknown): Promise<Action
     return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   }
   const { identifier } = parsed.data;
+
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`reset-req:${ip}`, 5, 3600).allowed || !checkRateLimit(`reset-req-id:${identifier.toLowerCase()}`, 3, 3600).allowed) {
+    return { success: true }; // don't reveal rate limiting to a potential enumerator either
+  }
 
   const user = isEmailLike(identifier)
     ? await db.user.findUnique({ where: { email: identifier.trim().toLowerCase() } })
@@ -140,6 +157,11 @@ export async function resetPasswordAction(input: unknown): Promise<ActionResult>
     return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
   }
   const { token, password } = parsed.data;
+
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`reset-confirm:${ip}`, 15, 600).allowed) {
+    return { success: false, error: RATE_LIMIT_MESSAGE };
+  }
 
   const tokenHash = hashToken(token);
   const record = await db.passwordResetToken.findUnique({ where: { tokenHash } });

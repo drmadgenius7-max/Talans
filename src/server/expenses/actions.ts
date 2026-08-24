@@ -22,7 +22,15 @@ import { generateSecureToken } from "@/lib/tokens";
 import { createExpenseSchema } from "@/lib/validation/expenses";
 import type { ActionResult } from "@/server/auth/actions";
 
-export async function createExpenseAction(input: unknown): Promise<ActionResult & { expenseId?: string }> {
+export interface GeneratedPaymentRequest {
+  token: string;
+  debtorName: string;
+  amount: number;
+}
+
+export async function createExpenseAction(
+  input: unknown,
+): Promise<ActionResult & { expenseId?: string; currency?: string; generatedRequests?: GeneratedPaymentRequest[] }> {
   const user = await requireUser();
   const parsed = createExpenseSchema.safeParse(input);
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? "بيانات غير صحيحة" };
@@ -33,7 +41,10 @@ export async function createExpenseAction(input: unknown): Promise<ActionResult 
   if (!roleHasPermission(member.role, "ADD_EXPENSE")) return { success: false, error: "ليس لديك صلاحية إضافة مصروف" };
 
   const group = await db.group.findUniqueOrThrow({ where: { id: data.groupId } });
-  const groupMembers = await db.groupMember.findMany({ where: { groupId: data.groupId, status: "ACTIVE" } });
+  const groupMembers = await db.groupMember.findMany({
+    where: { groupId: data.groupId, status: "ACTIVE" },
+    include: { user: { select: { name: true } } },
+  });
   const validMemberIds = new Set(groupMembers.map((m) => m.id));
 
   for (const p of data.payers) {
@@ -210,29 +221,34 @@ export async function createExpenseAction(input: unknown): Promise<ActionResult 
 
       // "دفعت عنهم" convenience: auto-generate payment requests when a
       // single payer covered participants other than themselves.
+      const generatedRequests: { token: string; debtorName: string; amount: number }[] = [];
       if (data.autoCreatePaymentRequests && data.payers.length === 1) {
-        const payerMemberId = data.payers[0]!.groupMemberId;
-        const payerMember = memberById.get(payerMemberId);
+        const expensePayerMemberId = data.payers[0]!.groupMemberId;
+        const payerMember = memberById.get(expensePayerMemberId);
         if (payerMember) {
           for (const [groupMemberId, owedAmount] of finalOwed) {
-            if (groupMemberId === payerMemberId || owedAmount <= 0) continue;
+            if (groupMemberId === expensePayerMemberId || owedAmount <= 0) continue;
             const debtor = memberById.get(groupMemberId);
             if (!debtor) continue;
+            const token = generateSecureToken(24);
             await tx.paymentRequest.create({
               data: {
                 groupId: data.groupId,
                 expenseId: created.id,
                 requesterId: user.id,
+                requesterMemberId: payerMember.id,
                 payerUserId: debtor.userId,
+                payerMemberId: debtor.id,
                 payerGuestName: debtor.userId ? null : debtor.guestName,
                 payerGuestPhone: debtor.userId ? null : debtor.guestPhone,
                 amount: owedAmount,
                 currency: group.currency,
                 reason: data.title,
-                secureToken: generateSecureToken(24),
+                secureToken: token,
                 status: "PENDING",
               },
             });
+            generatedRequests.push({ token, debtorName: debtor.user?.name ?? debtor.guestName ?? "عضو", amount: owedAmount });
             if (debtor.userId) {
               await notify(tx, {
                 userId: debtor.userId,
@@ -246,12 +262,17 @@ export async function createExpenseAction(input: unknown): Promise<ActionResult 
         }
       }
 
-      return created;
+      return { expense: created, generatedRequests };
     });
 
     revalidatePath(`/groups/${data.groupId}`);
     revalidatePath("/dashboard");
-    return { success: true, expenseId: expense.id };
+    return {
+      success: true,
+      expenseId: expense.expense.id,
+      currency: group.currency,
+      generatedRequests: expense.generatedRequests,
+    };
   } catch (err) {
     if (err instanceof SplitValidationError) return { success: false, error: err.message };
     throw err;

@@ -25,6 +25,10 @@ next-env.d.ts
 
 # testing
 coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # local storage for uploaded files (dev)
 storage/uploads/*

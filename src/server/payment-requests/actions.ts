@@ -8,6 +8,7 @@ import { toMinorUnits } from "@/lib/money";
 import { notify } from "@/server/notifications/notify";
 import { createPaymentRequestSchema } from "@/lib/validation/payment-requests";
 import { simulatePaymentOutcome, initiatePaymentRequestCharge } from "@/server/payments/service";
+import { checkRateLimit, getRequestIp } from "@/server/security/rate-limit";
 import type { ActionResult } from "@/server/auth/actions";
 import type { PaymentOutcome } from "@/server/payments/types";
 
@@ -92,6 +93,10 @@ export async function sendManualReminderAction(requestId: string): Promise<Actio
 
 /** Mock-mode only: called from the public /pay/simulate page's outcome buttons. */
 export async function simulateMockPaymentAction(transactionId: string, outcome: PaymentOutcome) {
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`sim-pay:${ip}`, 30, 300).allowed) {
+    return { success: false as const, error: "محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل" };
+  }
   try {
     await simulatePaymentOutcome(transactionId, outcome);
     return { success: true as const };
@@ -101,6 +106,10 @@ export async function simulateMockPaymentAction(transactionId: string, outcome: 
 }
 
 export async function startPaymentRequestChargeAction(paymentRequestId: string, amountMinor?: number) {
+  const ip = await getRequestIp();
+  if (!checkRateLimit(`start-charge:${ip}`, 30, 300).allowed) {
+    return { success: false as const, error: "محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل" };
+  }
   try {
     const result = await initiatePaymentRequestCharge(paymentRequestId, amountMinor);
     return { success: true as const, ...result };

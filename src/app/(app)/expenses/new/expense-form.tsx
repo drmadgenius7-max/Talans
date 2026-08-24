@@ -13,7 +13,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/toaster";
-import { createExpenseAction } from "@/server/expenses/actions";
+import { createExpenseAction, type GeneratedPaymentRequest } from "@/server/expenses/actions";
+import { ShareActions } from "@/components/share-actions";
+import { ReceiptUploader } from "@/components/receipt-uploader";
 import {
   equalSplit,
   exactSplit,
@@ -64,6 +66,7 @@ export function ExpenseForm({
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryId, setCategoryId] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [attachmentFileIds, setAttachmentFileIds] = useState<string[]>([]);
 
   const [multiPayer, setMultiPayer] = useState(false);
   const [payerAmounts, setPayerAmounts] = useState<Record<string, string>>({ [myMemberId]: "" });
@@ -79,6 +82,7 @@ export function ExpenseForm({
 
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [createdRequests, setCreatedRequests] = useState<GeneratedPaymentRequest[] | null>(null);
 
   function onGroupChange(newGroupId: string) {
     const newGroup = groups.find((g) => g.id === newGroupId)!;
@@ -179,7 +183,7 @@ export function ExpenseForm({
           : undefined,
       adjustments: adjustments.filter((a) => Number(a.amount) > 0).map((a) => ({ type: a.type, amount: Number(a.amount), isDiscount: a.isDiscount })),
       autoCreatePaymentRequests: autoRequest,
-      attachmentFileIds: [],
+      attachmentFileIds,
     });
     setSubmitting(false);
 
@@ -188,7 +192,44 @@ export function ExpenseForm({
       return;
     }
     toast.success("تمت إضافة المصروف");
-    router.push(`/groups/${groupId}`);
+    if (result.generatedRequests && result.generatedRequests.length > 0) {
+      setCreatedRequests(result.generatedRequests);
+    } else {
+      router.push(`/groups/${groupId}`);
+    }
+  }
+
+  if (createdRequests) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col items-center gap-2 py-2 text-center">
+          <p className="text-3xl">✅</p>
+          <p className="text-lg font-bold">تم إنشاء المطالبات</p>
+          <p className="text-sm text-muted-foreground">شارك الرابط مع كل شخص عشان يسدد حصته</p>
+        </div>
+        <div className="space-y-3">
+          {createdRequests.map((r) => {
+            const url = `${window.location.origin}/pay/${r.token}`;
+            return (
+              <div key={r.token} className="rounded-xl border border-border p-3.5">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-semibold">{r.debtorName}</span>
+                  <span className="font-bold">{formatMoney(r.amount, group.currency)}</span>
+                </div>
+                <ShareActions
+                  url={url}
+                  message={`هلا ${r.debtorName} 👋\nحصتك في "${title}" ${formatMoney(r.amount, group.currency)}.\nتقدر تسددها من الرابط التالي:`}
+                  title="مطالبة من قِطّة"
+                />
+              </div>
+            );
+          })}
+        </div>
+        <Button className="w-full" onClick={() => router.push(`/groups/${groupId}`)}>
+          الرجوع للمجموعة
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -242,12 +283,15 @@ export function ExpenseForm({
       </div>
 
       {!paidForThemMode && (
-        <div className="flex items-center justify-between rounded-xl border border-border p-3">
+        <div
+          onClick={() => setMultiPayer((v) => !v)}
+          className="flex w-full cursor-pointer items-center justify-between rounded-xl border border-border p-3 text-start"
+        >
           <div>
             <p className="text-sm font-semibold">أكثر من شخص دفع؟</p>
             <p className="text-xs text-muted-foreground">فعّلها إذا اشترك أكثر من شخص في الدفع</p>
           </div>
-          <Switch checked={multiPayer} onCheckedChange={setMultiPayer} />
+          <Switch checked={multiPayer} onCheckedChange={setMultiPayer} onClick={(e) => e.stopPropagation()} />
         </div>
       )}
 
@@ -453,6 +497,11 @@ export function ExpenseForm({
       <div className="space-y-1.5">
         <Label htmlFor="notes">ملاحظات (اختياري)</Label>
         <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>إيصال الفاتورة (اختياري)</Label>
+        <ReceiptUploader onChange={setAttachmentFileIds} />
       </div>
 
       {paidForThemMode && (

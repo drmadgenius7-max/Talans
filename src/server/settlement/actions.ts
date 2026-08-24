@@ -65,7 +65,9 @@ export async function createRequestFromTransferAction(
     data: {
       groupId,
       requesterId: toMember.userId,
+      requesterMemberId: toMember.id,
       payerUserId: fromMember.userId,
+      payerMemberId: fromMember.id,
       payerGuestName: fromMember.userId ? null : fromMember.guestName,
       payerGuestPhone: fromMember.userId ? null : fromMember.guestPhone,
       amount: item.amountMinor,
